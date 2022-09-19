@@ -1742,16 +1742,17 @@ function! s:Preview(bang, lnum, uri) abort
   endif
   let binding = s:sub(binding, '^0\.0\.0\.0>|^127\.0\.0\.1>', 'localhost')
   let binding = s:sub(binding, '^\[::\]', '[::1]')
+  let uri_scheme = rails#app().uri_scheme()
   let uri = empty(a:uri) ? get(rails#buffer().preview_urls(a:lnum),0,'') : a:uri
   if uri =~ '://'
     "
   elseif uri =~# '^[[:alnum:]-]\+\.'
-    let uri = 'http://'.s:sub(uri, '^[^/]*\zs', matchstr(root, ':\d\+$'))
+    let uri = uri_scheme.'://'.s:sub(uri, '^[^/]*\zs', matchstr(root, ':\d\+$'))
   elseif uri =~# '^[[:alnum:]-]\+\%(/\|$\)'
     let domain = s:sub(binding, '^localhost>', 'lvh.me')
-    let uri = 'http://'.s:sub(uri, '^[^/]*\zs', '.'.domain)
+    let uri = uri_scheme.'://'.s:sub(uri, '^[^/]*\zs', '.'.domain)
   else
-    let uri = 'http://'.binding.'/'.s:sub(uri,'^/','')
+    let uri = uri_scheme.'://'.binding.'/'.s:sub(uri,'^/','')
   endif
   call s:initOpenURL()
   if (exists(':OpenURL') == 2) && !a:bang
@@ -2680,6 +2681,19 @@ function! s:app_named_route_file(route_name) dict abort
   return ""
 endfunction
 
+function! s:app_uri_scheme() dict abort
+  if self.cache.needs('uri_scheme')
+    let binding = self.server_binding()
+    let https = system('ps | grep -v "grep" | grep ' . shellescape('ssl://' . binding))
+    if len(https) > 0
+      call self.cache.set('uri_scheme', 'https')
+    else
+      call self.cache.set('uri_scheme', 'http')
+    endif
+  endif
+  return self.cache.get('uri_scheme')
+endfunction
+
 function! s:app_routes() dict abort
   if self.cache.needs('routes')
     let cd = haslocaldir() ? 'lcd' : exists(':tcd') && haslocaldir(-1) ? 'tcd' : 'cd'
@@ -2687,8 +2701,9 @@ function! s:app_routes() dict abort
     let routes = []
     let paths = {}
     let binding = self.server_binding()
+    let uri_scheme = self.uri_scheme()
     if len(binding) && len(s:webcat())
-      let html = system(s:webcat() . ' ' . shellescape('http://' . binding . '/rails/info/routes'))
+      let html = system(s:webcat() . ' ' . shellescape(uri_scheme . '://' . binding . '/rails/info/routes'))
       for line in split(matchstr(html, '.*<tbody>\zs.*\ze</tbody>'), "\n")
         let val = matchstr(line, '\C<td data-route-name=''\zs[^'']*''\ze>')
         if len(val)
@@ -2745,7 +2760,7 @@ function! s:app_routes() dict abort
   return self.cache.get('routes')
 endfunction
 
-call s:add_methods('app', ['routes', 'named_route_file'])
+call s:add_methods('app', ['routes', 'named_route_file', 'uri_scheme'])
 
 " }}}1
 " Projection Commands {{{1
