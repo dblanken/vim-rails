@@ -1742,17 +1742,16 @@ function! s:Preview(bang, lnum, uri) abort
   endif
   let binding = s:sub(binding, '^0\.0\.0\.0>|^127\.0\.0\.1>', 'localhost')
   let binding = s:sub(binding, '^\[::\]', '[::1]')
-  let uri_scheme = rails#app().uri_scheme()
   let uri = empty(a:uri) ? get(rails#buffer().preview_urls(a:lnum),0,'') : a:uri
   if uri =~ '://'
     "
   elseif uri =~# '^[[:alnum:]-]\+\.'
-    let uri = uri_scheme.'://'.s:sub(uri, '^[^/]*\zs', matchstr(root, ':\d\+$'))
+    let uri = s:sub(uri, '^[^/]*\zs', matchstr(root, ':\d\+$'))
   elseif uri =~# '^[[:alnum:]-]\+\%(/\|$\)'
     let domain = s:sub(binding, '^localhost>', 'lvh.me')
-    let uri = uri_scheme.'://'.s:sub(uri, '^[^/]*\zs', '.'.domain)
+    let uri = s:sub(uri, '^[^/]*\zs', '.'.domain)
   else
-    let uri = uri_scheme.'://'.binding.'/'.s:sub(uri,'^/','')
+    let uri = binding.'/'.s:sub(uri,'^/','')
   endif
   call s:initOpenURL()
   if (exists(':OpenURL') == 2) && !a:bang
@@ -1965,7 +1964,14 @@ function! rails#get_binding_for(pid) abort
   if has('win32')
     let output = system('netstat -anop tcp')
     let binding = matchstr(output, '\n\s*TCP\s\+\zs\S\+\ze\s\+\S\+\s\+LISTENING\s\+'.a:pid.'\>')
-    return s:sub(binding, '^([^[]*:.*):', '[\1]:')
+    let uri_scheme = 'http://'
+    if executable('curl')
+      let errorcode = system('curl -k -silent --head --fail https://'.binding)
+      if len(matchstr(errorcode, '200 OK')) > 0
+	let uri_scheme = 'https://'
+      endif
+    endif
+    return uri_scheme.s:sub(binding, '^([^[]*:.*):', '[\1]:')
   endif
   if executable('lsof')
     let lsof = 'lsof'
@@ -2701,9 +2707,8 @@ function! s:app_routes() dict abort
     let routes = []
     let paths = {}
     let binding = self.server_binding()
-    let uri_scheme = self.uri_scheme()
     if len(binding) && len(s:webcat())
-      let html = system(s:webcat() . ' ' . shellescape(uri_scheme . '://' . binding . '/rails/info/routes'))
+      let html = system(s:webcat() . ' ' . shellescape(binding . '/rails/info/routes'))
       for line in split(matchstr(html, '.*<tbody>\zs.*\ze</tbody>'), "\n")
         let val = matchstr(line, '\C<td data-route-name=''\zs[^'']*''\ze>')
         if len(val)
@@ -2760,7 +2765,7 @@ function! s:app_routes() dict abort
   return self.cache.get('routes')
 endfunction
 
-call s:add_methods('app', ['routes', 'named_route_file', 'uri_scheme'])
+call s:add_methods('app', ['routes', 'named_route_file'])
 
 " }}}1
 " Projection Commands {{{1
